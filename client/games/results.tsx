@@ -1,15 +1,15 @@
-import { Immutable } from 'immer'
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect } from 'react'
 import styled from 'styled-components'
 import { assertUnreachable } from '../../common/assert-unreachable'
-import { GameClientPlayerResult, GameClientResult } from '../../common/games/results'
-import { MapInfoJson } from '../../common/maps'
+import { ReconciledPlayerResult, ReconciledResult } from '../../common/games/results'
 import { ComingSoon } from '../coming-soon/coming-soon'
 import { RaceIcon } from '../lobbies/race-icon'
+import { batchGetMapInfo } from '../maps/action-creators'
 import { MapThumbnail } from '../maps/map-thumbnail'
 import Card from '../material/card'
 import { shadowDef2dp } from '../material/shadow-constants'
 import { TabItem, Tabs } from '../material/tabs'
+import { useAppDispatch, useAppSelector } from '../redux-hooks'
 import { amberA200, colorNegative, colorPositive, colorTextSecondary } from '../styles/colors'
 import {
   body2,
@@ -20,6 +20,7 @@ import {
   singleLine,
   subtitle1,
 } from '../styles/typography'
+import { navigateToGameResults } from './action-creators'
 import { ResultsSubPage } from './results-sub-page'
 
 const Container = styled.div`
@@ -31,58 +32,6 @@ const TabArea = styled.div`
   width: 100%;
   max-width: 720px;
 `
-
-function getDurationStr(durationMs: number): string {
-  const timeSec = Math.floor(durationMs / 1000)
-  const hours = Math.floor(timeSec / 3600)
-  const minutes = Math.floor(timeSec / 60) % 60
-  const seconds = timeSec % 60
-
-  return [hours, minutes, seconds]
-    .map(v => ('' + v).padStart(2, '0'))
-    .filter((v, i) => v !== '00' || i > 0)
-    .join(':')
-}
-
-export interface ConnectedGameResultsPageProps {
-  gameId: string
-  subPage?: ResultsSubPage
-}
-
-export function ConnectedGameResultsPage({ gameId, subPage }: ConnectedGameResultsPageProps) {
-  const onTabChange = useCallback(
-    (tab: ResultsSubPage) => {
-      // FIXME real thing!
-      console.log(`changing tab: ${gameId}/${tab}`)
-    },
-    [gameId],
-  )
-
-  // FIXME pull real things from reducers
-  return (
-    <GameResults
-      subPage={subPage}
-      onTabChange={onTabChange}
-      map={undefined as any}
-      result={undefined as any}
-      gameDuration={7}
-    />
-  )
-}
-
-const ComingSoonRoot = styled.div`
-  /* 34px + 6px from tab = 40px */
-  margin-top: 34px;
-  padding: 0 24px;
-`
-
-function ComingSoonPage() {
-  return (
-    <ComingSoonRoot>
-      <ComingSoon />
-    </ComingSoonRoot>
-  )
-}
 
 const HeaderArea = styled.div`
   height: 72px;
@@ -134,27 +83,38 @@ const LiveIndicator = styled.div`
   color: ${amberA200};
 `
 
-export interface GameResultsProps {
-  className?: string
-  subPage?: ResultsSubPage
-  onTabChange: (tab: ResultsSubPage) => void
-  map: Immutable<MapInfoJson>
-  result: Map<string, GameClientPlayerResult>
-  gameDuration: number
+function getDurationStr(durationMs: number): string {
+  const timeSec = Math.floor(durationMs / 1000)
+  const hours = Math.floor(timeSec / 3600)
+  const minutes = Math.floor(timeSec / 60) % 60
+  const seconds = timeSec % 60
+
+  return [hours, minutes, seconds]
+    .map(v => ('' + v).padStart(2, '0'))
+    .filter((v, i) => v !== '00' || i > 0)
+    .join(':')
 }
 
-export function GameResults({
-  className,
+export interface ConnectedGameResultsPageProps {
+  gameId: string
+  subPage?: ResultsSubPage
+}
+
+export function ConnectedGameResultsPage({
+  gameId,
   subPage = ResultsSubPage.Summary,
-  onTabChange,
-  map,
-  result,
-  gameDuration,
-}: GameResultsProps) {
+}: ConnectedGameResultsPageProps) {
+  const onTabChange = useCallback(
+    (tab: ResultsSubPage) => {
+      navigateToGameResults(gameId, tab)
+    },
+    [gameId],
+  )
+
   let content: React.ReactNode
   switch (subPage) {
     case ResultsSubPage.Summary:
-      content = <SummaryPage map={map} result={result} gameDuration={gameDuration} />
+      content = <SummaryPage gameId={gameId} />
       break
 
     case ResultsSubPage.Stats:
@@ -167,7 +127,7 @@ export function GameResults({
   }
 
   return (
-    <Container className={className}>
+    <Container>
       <HeaderArea>
         <Headline3>Victory!</Headline3>
         <HeaderInfo>
@@ -177,7 +137,8 @@ export function GameResults({
           </HeaderInfoItem>
           <HeaderInfoItem>
             <HeaderInfoLabel>Time</HeaderInfoLabel>
-            <HeaderInfoValue>{getDurationStr(gameDuration)}</HeaderInfoValue>
+            {/** FIXME */}
+            <HeaderInfoValue>{getDurationStr(272727)}</HeaderInfoValue>
           </HeaderInfoItem>
         </HeaderInfo>
         <LiveIndicator>Live</LiveIndicator>
@@ -191,6 +152,20 @@ export function GameResults({
       </TabArea>
       {content}
     </Container>
+  )
+}
+
+const ComingSoonRoot = styled.div`
+  /* 34px + 6px from tab = 40px */
+  margin-top: 34px;
+  padding: 0 24px;
+`
+
+function ComingSoonPage() {
+  return (
+    <ComingSoonRoot>
+      <ComingSoon />
+    </ComingSoonRoot>
   )
 }
 
@@ -215,28 +190,32 @@ const PlayerListContainer = styled.div`
 
 const PlayerListCard = styled(Card)``
 
-function SummaryPage({
-  map,
-  result,
-  gameDuration,
-}: {
-  map: Immutable<MapInfoJson>
-  result: Map<string, GameClientPlayerResult>
-  gameDuration: number
-}) {
-  return (
+function SummaryPage({ gameId }: { gameId: string }) {
+  const dispatch = useAppDispatch()
+
+  const game = useAppSelector(s => s.games.byId.get(gameId))
+  const mapId = game?.mapId
+  const map = useAppSelector(s => (mapId ? s.maps2.byId.get(mapId) : undefined))
+
+  useEffect(() => {
+    if (mapId) {
+      dispatch(batchGetMapInfo(mapId))
+    }
+  }, [dispatch, mapId])
+
+  return game ? (
     <ResultsAndMap>
       <PlayerListContainer>
         <PlayerListCard>
-          {Array.from(result.entries()).map(([name, result]) => (
-            <PlayerResult playerName={name} result={result} />
+          {game.results?.map(([id, result]) => (
+            <PlayerResult key={String(id)} playerName={String(id)} result={result} />
           ))}
         </PlayerListCard>
       </PlayerListContainer>
-      <MapContainer>
-        <MapThumbnail map={map} size={320} />
-      </MapContainer>
+      <MapContainer>{map ? <MapThumbnail map={map} size={320} /> : null}</MapContainer>
     </ResultsAndMap>
+  ) : (
+    <span>FIXME loading</span>
   )
 }
 
@@ -277,7 +256,7 @@ const PlayerApm = styled.div`
 export interface PlayerResultProps {
   className?: string
   playerName: string
-  result: GameClientPlayerResult
+  result: ReconciledPlayerResult
 }
 
 export function PlayerResult({ className, playerName, result }: PlayerResultProps) {
@@ -293,7 +272,7 @@ export function PlayerResult({ className, playerName, result }: PlayerResultProp
 
 export interface GameResultTextProps {
   className?: string
-  result: GameClientResult
+  result: ReconciledResult
 }
 
 const PositiveText = styled.span`
@@ -306,13 +285,14 @@ const NegativeText = styled.span`
 
 export function GameResultText({ className, result }: GameResultTextProps) {
   switch (result) {
-    case GameClientResult.Defeat:
-    case GameClientResult.Disconnected:
-      return <NegativeText className={className}>Loss</NegativeText>
-    case GameClientResult.Playing:
-      return <span className={className}>—</span>
-    case GameClientResult.Victory:
+    case 'win':
       return <PositiveText className={className}>Win</PositiveText>
+    case 'loss':
+      return <NegativeText className={className}>Loss</NegativeText>
+    case 'draw':
+      return <span className={className}>Draw</span>
+    case 'unknown':
+      return <span className={className}>—</span>
     default:
       return assertUnreachable(result)
   }
