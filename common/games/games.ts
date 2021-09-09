@@ -16,3 +16,17 @@ export interface GameRecord {
 }
 
 export type GameRecordJson = Jsonify<GameRecord>
+
+export function toGameRecordJson(game: GameRecord): GameRecordJson {
+  return {
+    id: game.id,
+    startTime: Number(game.startTime),
+    mapId: game.mapId,
+    config: game.config,
+    disputable: game.disputable,
+    disputeRequested: game.disputeRequested,
+    disputeReviewed: game.disputeReviewed,
+    gameLength: game.gameLength,
+    results: game.results,
+  }
+}

@@ -1,6 +1,7 @@
+import { GameRecordJson } from '../../common/games/games'
 import { GameClientPlayerResult } from '../../common/games/results'
 
-export type GamesActions = DeliverLocalResults
+export type GamesActions = DeliverLocalResults | GetGameRecord
 
 export interface DeliverLocalResults {
   type: '@games/deliverLocalResults'
@@ -10,4 +11,15 @@ export interface DeliverLocalResults {
     time: number
   }
   error?: false
+}
+
+export interface GetGameRecordSuccess {
+  type: '@games/getGameRecord'
+  payload: GameRecordJson
+  error?: false
+}
+
+export interface GetGameRecord {
+  type: '@games/getGameRecord'
+  payload: GameRecordJson
 }

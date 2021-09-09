@@ -5,6 +5,7 @@ import httpErrors from 'http-errors'
 import Joi from 'joi'
 import { NydusServer } from 'nydus'
 import { isValidEmail, isValidPassword, isValidUsername } from '../../../common/constants'
+import { toGameRecordJson } from '../../../common/games/games'
 import { LadderPlayer } from '../../../common/ladder'
 import { toMapInfoJson } from '../../../common/maps'
 import { ALL_MATCHMAKING_TYPES, MatchmakingType } from '../../../common/matchmaking'
@@ -14,6 +15,7 @@ import { GetUserProfilePayload, SbUser, SelfUser } from '../../../common/users/u
 import { UNIQUE_VIOLATION } from '../db/pg-error-codes'
 import transact from '../db/transaction'
 import { HttpErrorWithPayload } from '../errors/error-with-payload'
+import { getRecentGamesForUser } from '../games/game-models'
 import { httpApi } from '../http/http-api'
 import { httpBefore, httpGet, httpPatch, httpPost } from '../http/route-decorators'
 import sendMail from '../mail/mailer'
@@ -24,7 +26,6 @@ import {
   consumeEmailVerificationCode,
   getEmailVerificationsCount,
 } from '../models/email-verifications'
-import { getRecentGamesForUser } from '../models/games'
 import { usePasswordResetCode } from '../models/password-resets'
 import { checkAnyPermission } from '../permissions/check-permissions'
 import ensureLoggedIn from '../session/ensure-logged-in'
@@ -178,7 +179,7 @@ export class UserApi {
       ])
 
       return {
-        games: games.map(g => ({ ...g, startTime: Number(g.startTime) })),
+        games: games.map(g => toGameRecordJson(g)),
         maps: maps.map(m => toMapInfoJson(m)),
         users: Array.from(users.values()),
       }
