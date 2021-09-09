@@ -1,7 +1,10 @@
-import React, { useCallback, useEffect } from 'react'
+import { Immutable } from 'immer'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { assertUnreachable } from '../../common/assert-unreachable'
+import { GameRecordJson } from '../../common/games/games'
 import { ReconciledPlayerResult, ReconciledResult } from '../../common/games/results'
+import { useSelfUser } from '../auth/state-hooks'
 import { ComingSoon } from '../coming-soon/coming-soon'
 import { RaceIcon } from '../lobbies/race-icon'
 import { batchGetMapInfo } from '../maps/action-creators'
@@ -9,6 +12,7 @@ import { MapThumbnail } from '../maps/map-thumbnail'
 import Card from '../material/card'
 import { shadowDef2dp } from '../material/shadow-constants'
 import { TabItem, Tabs } from '../material/tabs'
+import { LoadingDotsArea } from '../progress/dots'
 import { useAppDispatch, useAppSelector } from '../redux-hooks'
 import { amberA200, colorNegative, colorPositive, colorTextSecondary } from '../styles/colors'
 import {
@@ -20,7 +24,7 @@ import {
   singleLine,
   subtitle1,
 } from '../styles/typography'
-import { navigateToGameResults } from './action-creators'
+import { navigateToGameResults, viewGame } from './action-creators'
 import { ResultsSubPage } from './results-sub-page'
 
 const Container = styled.div`
@@ -95,6 +99,15 @@ function getDurationStr(durationMs: number): string {
     .join(':')
 }
 
+function getGameTypeString(game: Immutable<GameRecordJson>): string {
+  // TODO(tec27): Handle more ranked types, show mode (UMS, Top v Bottom, etc.?)
+  if (game.config.gameSource === 'LOBBY') {
+    return 'Custom game'
+  } else if (game.config.gameSource === 'MATCHMAKING') {
+    return 'Ranked 1v1'
+  }
+}
+
 export interface ConnectedGameResultsPageProps {
   gameId: string
   subPage?: ResultsSubPage
@@ -104,6 +117,7 @@ export function ConnectedGameResultsPage({
   gameId,
   subPage = ResultsSubPage.Summary,
 }: ConnectedGameResultsPageProps) {
+  const dispatch = useAppDispatch()
   const onTabChange = useCallback(
     (tab: ResultsSubPage) => {
       navigateToGameResults(gameId, tab)
@@ -111,10 +125,33 @@ export function ConnectedGameResultsPage({
     [gameId],
   )
 
+  const selfUser = useSelfUser()
+  const game = useAppSelector(s => s.games.byId.get(gameId))
+  const [loadingError, setLoadingError] = useState<Error>()
+  const cancelLoadRef = useRef(new AbortController())
+
+  useEffect(() => {
+    cancelLoadRef.current.abort()
+    const abortController = new AbortController()
+    cancelLoadRef.current = abortController
+
+    dispatch(
+      viewGame(gameId, {
+        signal: abortController.signal,
+        onSuccess: () => setLoadingError(undefined),
+        onError: err => setLoadingError(err),
+      }),
+    )
+
+    return () => {
+      abortController.abort()
+    }
+  }, [gameId, dispatch])
+
   let content: React.ReactNode
   switch (subPage) {
     case ResultsSubPage.Summary:
-      content = <SummaryPage gameId={gameId} />
+      content = <SummaryPage gameId={gameId} game={game} loadingError={loadingError} />
       break
 
     case ResultsSubPage.Stats:
@@ -126,20 +163,52 @@ export function ConnectedGameResultsPage({
       content = assertUnreachable(subPage)
   }
 
+  const headline = useMemo<string>(() => {
+    if (game && !game.results) {
+      return 'In progress…'
+    } else if (
+      game &&
+      game.config.teams.some(t => t.some(p => !p.isComputer && p.id === selfUser.id))
+    ) {
+      for (const [id, result] of game.results!) {
+        if (id === selfUser.id) {
+          switch (result.result) {
+            case 'win':
+              return 'Victory!'
+            case 'loss':
+              return 'Defeat!'
+            case 'draw':
+            case 'unknown':
+              return 'Draw!'
+            default:
+              return assertUnreachable(result.result)
+          }
+        }
+      }
+    }
+
+    return 'Results'
+  }, [selfUser, game])
+
   return (
     <Container>
       <HeaderArea>
-        <Headline3>Victory!</Headline3>
+        <Headline3>{headline}</Headline3>
         <HeaderInfo>
-          <HeaderInfoItem>
-            <HeaderInfoLabel>Type</HeaderInfoLabel>
-            <HeaderInfoValue>Ranked 1v1</HeaderInfoValue>
-          </HeaderInfoItem>
-          <HeaderInfoItem>
-            <HeaderInfoLabel>Time</HeaderInfoLabel>
-            {/** FIXME */}
-            <HeaderInfoValue>{getDurationStr(272727)}</HeaderInfoValue>
-          </HeaderInfoItem>
+          {game ? (
+            <>
+              <HeaderInfoItem>
+                <HeaderInfoLabel>Type</HeaderInfoLabel>
+                <HeaderInfoValue>{getGameTypeString(game)}</HeaderInfoValue>
+              </HeaderInfoItem>
+              <HeaderInfoItem>
+                <HeaderInfoLabel>Time</HeaderInfoLabel>
+                <HeaderInfoValue>
+                  {game.gameLength ? getDurationStr(game.gameLength) : ''}
+                </HeaderInfoValue>
+              </HeaderInfoItem>
+            </>
+          ) : null}
         </HeaderInfo>
         <LiveIndicator>Live</LiveIndicator>
       </HeaderArea>
@@ -169,6 +238,14 @@ function ComingSoonPage() {
   )
 }
 
+const LoadingError = styled.div`
+  ${subtitle1};
+  width: 100%;
+  margin-top: 32px;
+  margin-bottom: 48px;
+  padding: 0 24px;
+`
+
 const ResultsAndMap = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -190,20 +267,36 @@ const PlayerListContainer = styled.div`
 
 const PlayerListCard = styled(Card)``
 
-function SummaryPage({ gameId }: { gameId: string }) {
+function SummaryPage({
+  gameId,
+  game,
+  loadingError,
+}: {
+  gameId: string
+  game?: Immutable<GameRecordJson>
+  loadingError?: Error
+}) {
   const dispatch = useAppDispatch()
 
-  const game = useAppSelector(s => s.games.byId.get(gameId))
   const mapId = game?.mapId
   const map = useAppSelector(s => (mapId ? s.maps2.byId.get(mapId) : undefined))
 
+  // TODO(tec27): Return this with the game record instead?
   useEffect(() => {
     if (mapId) {
       dispatch(batchGetMapInfo(mapId))
     }
   }, [dispatch, mapId])
 
-  return game ? (
+  if (loadingError) {
+    // TODO(tec27): Handle specific errors, e.g. not found vs server error
+    return <LoadingError>There was a problem loading this game.</LoadingError>
+  }
+  if (!game) {
+    return <LoadingDotsArea />
+  }
+
+  return (
     <ResultsAndMap>
       <PlayerListContainer>
         <PlayerListCard>
@@ -214,8 +307,6 @@ function SummaryPage({ gameId }: { gameId: string }) {
       </PlayerListContainer>
       <MapContainer>{map ? <MapThumbnail map={map} size={320} /> : null}</MapContainer>
     </ResultsAndMap>
-  ) : (
-    <span>FIXME loading</span>
   )
 }
 

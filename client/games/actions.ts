@@ -13,12 +13,6 @@ export interface DeliverLocalResults {
   error?: false
 }
 
-export interface GetGameRecordSuccess {
-  type: '@games/getGameRecord'
-  payload: GameRecordJson
-  error?: false
-}
-
 export interface GetGameRecord {
   type: '@games/getGameRecord'
   payload: GameRecordJson
