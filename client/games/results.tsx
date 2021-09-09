@@ -299,7 +299,6 @@ function SummaryPage({
     return result
   }, [game])
 
-  // TODO(tec27): Return this with the game record instead?
   useEffect(() => {
     if (mapId) {
       dispatch(batchGetMapInfo(mapId))

@@ -1,7 +1,8 @@
 import { Immutable } from 'immer'
 import { assertUnreachable } from '../assert-unreachable'
 import { Jsonify } from '../json'
-import { SbUserId } from '../users/user-info'
+import { MapInfoJson } from '../maps'
+import { SbUser, SbUserId } from '../users/user-info'
 import { GameConfig, GameConfigPlayerId } from './configuration'
 import { ReconciledPlayerResult } from './results'
 
@@ -42,4 +43,10 @@ export function getGameTypeLabel(game: Immutable<GameRecordJson>): string {
   }
 
   return assertUnreachable(game.config.gameSource)
+}
+
+export interface GetGamePayload {
+  game: GameRecordJson
+  map: MapInfoJson
+  users: SbUser[]
 }

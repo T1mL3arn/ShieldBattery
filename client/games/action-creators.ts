@@ -1,4 +1,4 @@
-import { GameRecordJson } from '../../common/games/games'
+import { GetGamePayload } from '../../common/games/games'
 import { apiUrl, urlPath } from '../../common/urls'
 import { ThunkAction } from '../dispatch-registry'
 import { push } from '../navigation/routing'
@@ -23,7 +23,7 @@ export function viewGame(gameId: string, spec: RequestHandlingSpec): ThunkAction
     try {
       dispatch({
         type: '@games/getGameRecord',
-        payload: await fetch<GameRecordJson>(apiUrl`games/${gameId}`, {
+        payload: await fetch<GetGamePayload>(apiUrl`games/${gameId}`, {
           signal: spec.signal,
         }),
       })
