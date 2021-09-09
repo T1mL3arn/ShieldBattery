@@ -2,8 +2,10 @@ import { Immutable } from 'immer'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { assertUnreachable } from '../../common/assert-unreachable'
-import { GameRecordJson } from '../../common/games/games'
+import { GameConfigPlayerId } from '../../common/games/configuration'
+import { GameRecordJson, getGameTypeLabel } from '../../common/games/games'
 import { ReconciledPlayerResult, ReconciledResult } from '../../common/games/results'
+import { SbUserId } from '../../common/users/user-info'
 import { useSelfUser } from '../auth/state-hooks'
 import { ComingSoon } from '../coming-soon/coming-soon'
 import { RaceIcon } from '../lobbies/race-icon'
@@ -99,15 +101,6 @@ function getDurationStr(durationMs: number): string {
     .join(':')
 }
 
-function getGameTypeString(game: Immutable<GameRecordJson>): string {
-  // TODO(tec27): Handle more ranked types, show mode (UMS, Top v Bottom, etc.?)
-  if (game.config.gameSource === 'LOBBY') {
-    return 'Custom game'
-  } else if (game.config.gameSource === 'MATCHMAKING') {
-    return 'Ranked 1v1'
-  }
-}
-
 export interface ConnectedGameResultsPageProps {
   gameId: string
   subPage?: ResultsSubPage
@@ -199,12 +192,12 @@ export function ConnectedGameResultsPage({
             <>
               <HeaderInfoItem>
                 <HeaderInfoLabel>Type</HeaderInfoLabel>
-                <HeaderInfoValue>{getGameTypeString(game)}</HeaderInfoValue>
+                <HeaderInfoValue>{getGameTypeLabel(game)}</HeaderInfoValue>
               </HeaderInfoItem>
               <HeaderInfoItem>
                 <HeaderInfoLabel>Time</HeaderInfoLabel>
                 <HeaderInfoValue>
-                  {game.gameLength ? getDurationStr(game.gameLength) : ''}
+                  {game.gameLength ? getDurationStr(game.gameLength) : '—'}
                 </HeaderInfoValue>
               </HeaderInfoItem>
             </>
@@ -281,6 +274,31 @@ function SummaryPage({
   const mapId = game?.mapId
   const map = useAppSelector(s => (mapId ? s.maps2.byId.get(mapId) : undefined))
 
+  const configAndResults = useMemo(() => {
+    const result = new Map<
+      SbUserId,
+      [config: GameConfigPlayerId, result: ReconciledPlayerResult | undefined]
+    >()
+
+    if (!game) {
+      return result
+    }
+
+    for (const team of game.config.teams) {
+      for (const p of team) {
+        result.set(p.id, [p, undefined])
+      }
+    }
+
+    if (game.results) {
+      for (const [id, r] of game.results) {
+        result.get(id)![1] = r
+      }
+    }
+
+    return result
+  }, [game])
+
   // TODO(tec27): Return this with the game record instead?
   useEffect(() => {
     if (mapId) {
@@ -300,8 +318,8 @@ function SummaryPage({
     <ResultsAndMap>
       <PlayerListContainer>
         <PlayerListCard>
-          {game.results?.map(([id, result]) => (
-            <PlayerResult key={String(id)} playerName={String(id)} result={result} />
+          {Array.from(configAndResults.entries(), ([id, [config, result]]) => (
+            <PlayerResult key={String(id)} config={config} result={result} />
           ))}
         </PlayerListCard>
       </PlayerListContainer>
@@ -346,17 +364,19 @@ const PlayerApm = styled.div`
 
 export interface PlayerResultProps {
   className?: string
-  playerName: string
-  result: ReconciledPlayerResult
+  config: GameConfigPlayerId
+  result?: ReconciledPlayerResult
 }
 
-export function PlayerResult({ className, playerName, result }: PlayerResultProps) {
+export function PlayerResult({ className, config, result }: PlayerResultProps) {
+  const user = useAppSelector(s => (config.isComputer ? undefined : s.users.byId.get(config.id)))
+
   return (
     <PlayerResultContainer className={className}>
-      <StyledGameResultText result={result.result} />
-      <StyledRaceIcon race={result.race} />
-      <PlayerName>{playerName}</PlayerName>
-      <PlayerApm>{result.apm} APM</PlayerApm>
+      <StyledGameResultText result={result?.result ?? 'unknown'} />
+      <StyledRaceIcon race={result?.race ?? config.race} />
+      <PlayerName>{config.isComputer ? 'Computer' : user?.name ?? ''}</PlayerName>
+      <PlayerApm>{result?.apm ?? 0} APM</PlayerApm>
     </PlayerResultContainer>
   )
 }
