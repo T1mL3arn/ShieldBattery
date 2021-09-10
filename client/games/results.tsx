@@ -8,12 +8,15 @@ import { ReconciledPlayerResult, ReconciledResult } from '../../common/games/res
 import { SbUserId } from '../../common/users/user-info'
 import { useSelfUser } from '../auth/state-hooks'
 import { ComingSoon } from '../coming-soon/coming-soon'
+import RefreshIcon from '../icons/material/ic_refresh_black_24px.svg'
 import { RaceIcon } from '../lobbies/race-icon'
 import { batchGetMapInfo } from '../maps/action-creators'
 import { MapThumbnail } from '../maps/map-thumbnail'
+import { TextButton } from '../material/button'
 import Card from '../material/card'
-import { shadowDef2dp } from '../material/shadow-constants'
+import { shadow2dp } from '../material/shadows'
 import { TabItem, Tabs } from '../material/tabs'
+import { useRefreshToken } from '../network/refresh-token'
 import { LoadingDotsArea } from '../progress/dots'
 import { useAppDispatch, useAppSelector } from '../redux-hooks'
 import { amberA200, colorNegative, colorPositive, colorTextSecondary } from '../styles/colors'
@@ -31,7 +34,7 @@ import { ResultsSubPage } from './results-sub-page'
 
 const Container = styled.div`
   max-width: 960px;
-  padding: 24px 12px;
+  padding: 0px 12px 24px;
 `
 
 const TabArea = styled.div`
@@ -39,9 +42,25 @@ const TabArea = styled.div`
   max-width: 720px;
 `
 
+const ButtonBar = styled.div`
+  width: 100%;
+  padding: 0 24px;
+  margin-bottom: 24px;
+
+  display: flex;
+
+  & > * + * {
+    margin-left: 8px;
+  }
+`
+
+const ButtonSpacer = styled.div`
+  flex-grow: 1;
+`
+
 const HeaderArea = styled.div`
   height: 72px;
-  margin: 0 0 16px;
+  margin: 0 0 48px;
   padding: 0 24px;
 
   display: flex;
@@ -50,11 +69,14 @@ const HeaderArea = styled.div`
 `
 
 const HeaderInfo = styled.div`
-  height: 100%;
-  display: flex;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, min-content);
+  grid-template-columns: repeat(2, min-content);
+  grid-gap: 4px 32px;
 
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  justify-items: start;
 `
 
 const HeaderInfoItem = styled.div`
@@ -62,17 +84,18 @@ const HeaderInfoItem = styled.div`
   align-items: center;
 
   color: ${colorTextSecondary};
-
-  & + & {
-    margin-top: 4px;
-  }
 `
 
 const HeaderInfoLabel = styled.div`
   ${overline};
   ${singleLine};
   width: 96px;
-  margin-right: 24px;
+  margin-right: 16px;
+
+  // The all-caps variation used for overlines doesn't really align vertically between these fonts
+  // so we adjust manually
+  line-height: 23px;
+  padding-top: 1px;
 
   text-align: right;
 `
@@ -88,6 +111,20 @@ const LiveIndicator = styled.div`
 
   color: ${amberA200};
 `
+
+const gameDateFormat = new Intl.DateTimeFormat(navigator.language, {
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+})
+
+const longGameDateFormat = new Intl.DateTimeFormat(navigator.language, {
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+  hour: 'numeric',
+  minute: '2-digit',
+})
 
 function getDurationStr(durationMs: number): string {
   const timeSec = Math.floor(durationMs / 1000)
@@ -121,30 +158,48 @@ export function ConnectedGameResultsPage({
   const selfUser = useSelfUser()
   const game = useAppSelector(s => s.games.byId.get(gameId))
   const [loadingError, setLoadingError] = useState<Error>()
+  const [isLoading, setIsLoading] = useState(!game)
   const cancelLoadRef = useRef(new AbortController())
+  const [refreshToken, triggerRefresh] = useRefreshToken()
 
   useEffect(() => {
     cancelLoadRef.current.abort()
     const abortController = new AbortController()
     cancelLoadRef.current = abortController
 
+    setIsLoading(true)
+
     dispatch(
       viewGame(gameId, {
         signal: abortController.signal,
-        onSuccess: () => setLoadingError(undefined),
-        onError: err => setLoadingError(err),
+        onSuccess: () => {
+          setLoadingError(undefined)
+          setIsLoading(false)
+        },
+        onError: err => {
+          setLoadingError(err)
+          setIsLoading(false)
+        },
       }),
     )
 
     return () => {
       abortController.abort()
+      setIsLoading(false)
     }
-  }, [gameId, dispatch])
+  }, [gameId, refreshToken, dispatch])
 
   let content: React.ReactNode
   switch (subPage) {
     case ResultsSubPage.Summary:
-      content = <SummaryPage gameId={gameId} game={game} loadingError={loadingError} />
+      content = (
+        <SummaryPage
+          gameId={gameId}
+          game={game}
+          loadingError={loadingError}
+          isLoading={isLoading}
+        />
+      )
       break
 
     case ResultsSubPage.Stats:
@@ -185,6 +240,11 @@ export function ConnectedGameResultsPage({
 
   return (
     <Container>
+      <ButtonBar>
+        {/* TODO(tec27): Search again, watch replay, etc. */}
+        <ButtonSpacer />
+        <TextButton label='Refresh' iconStart={<RefreshIcon />} onClick={triggerRefresh} />
+      </ButtonBar>
       <HeaderArea>
         <Headline3>{headline}</Headline3>
         <HeaderInfo>
@@ -195,7 +255,13 @@ export function ConnectedGameResultsPage({
                 <HeaderInfoValue>{getGameTypeLabel(game)}</HeaderInfoValue>
               </HeaderInfoItem>
               <HeaderInfoItem>
-                <HeaderInfoLabel>Time</HeaderInfoLabel>
+                <HeaderInfoLabel>Date</HeaderInfoLabel>
+                <HeaderInfoValue title={longGameDateFormat.format(game.startTime)}>
+                  {gameDateFormat.format(game.startTime)}
+                </HeaderInfoValue>
+              </HeaderInfoItem>
+              <HeaderInfoItem>
+                <HeaderInfoLabel>Duration</HeaderInfoLabel>
                 <HeaderInfoValue>
                   {game.gameLength ? getDurationStr(game.gameLength) : '—'}
                 </HeaderInfoValue>
@@ -203,7 +269,7 @@ export function ConnectedGameResultsPage({
             </>
           ) : null}
         </HeaderInfo>
-        <LiveIndicator>Live</LiveIndicator>
+        {!game?.results ? <LiveIndicator>Live</LiveIndicator> : <div></div>}
       </HeaderArea>
       <TabArea>
         <Tabs activeTab={subPage} onChange={onTabChange}>
@@ -239,23 +305,42 @@ const LoadingError = styled.div`
   padding: 0 24px;
 `
 
-const ResultsAndMap = styled.div`
+const SummaryRoot = styled.div<{ $isLoading?: boolean }>`
+  width: 100%;
+  margin-top: 16px;
+  padding: 0 24px;
+
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-gap: 16px;
-  max-width: calc(3 * 320px);
-  margin-top: 32px;
+  grid-auto-flow: row;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(8, 1fr);
+  grid-gap: 24px 24px;
+
+  opacity: ${props => (props.$isLoading ? 0.6 : 1)};
+  transition: opacity linear 100ms;
 `
 
+const MAP_SIZE = ((960 - 48 - 24) / 8) * 3
+
 const MapContainer = styled.div`
-  width: 320px;
-  height: 320px;
-  border-radius: 2px;
-  box-shadow: ${shadowDef2dp};
+  grid-column: 6 / 9;
+  height: auto;
+
+  text-align: center;
+`
+
+const StyledMapThumbnail = styled(MapThumbnail)`
+  ${shadow2dp};
+`
+
+const MapName = styled.div`
+  ${headline6};
+  ${singleLine};
+  margin-top: 8px;
 `
 
 const PlayerListContainer = styled.div`
-  grid-column: 1 / 3;
+  grid-column: 1 / 6;
 `
 
 const PlayerListCard = styled(Card)``
@@ -264,10 +349,12 @@ function SummaryPage({
   gameId,
   game,
   loadingError,
+  isLoading,
 }: {
   gameId: string
   game?: Immutable<GameRecordJson>
   loadingError?: Error
+  isLoading: boolean
 }) {
   const dispatch = useAppDispatch()
 
@@ -314,7 +401,7 @@ function SummaryPage({
   }
 
   return (
-    <ResultsAndMap>
+    <SummaryRoot $isLoading={isLoading}>
       <PlayerListContainer>
         <PlayerListCard>
           {Array.from(configAndResults.entries(), ([id, [config, result]]) => (
@@ -322,8 +409,11 @@ function SummaryPage({
           ))}
         </PlayerListCard>
       </PlayerListContainer>
-      <MapContainer>{map ? <MapThumbnail map={map} size={320} /> : null}</MapContainer>
-    </ResultsAndMap>
+      <MapContainer>
+        {map ? <StyledMapThumbnail map={map} size={MAP_SIZE} /> : null}
+        {map ? <MapName>{map.name}</MapName> : null}
+      </MapContainer>
+    </SummaryRoot>
   )
 }
 

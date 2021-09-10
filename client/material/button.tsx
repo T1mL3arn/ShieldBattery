@@ -386,9 +386,20 @@ const TextButtonRoot = styled.button<TextButtonStyleProps>`
   }
 `
 
+const IconContainer = styled.div`
+  width: auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+
+  margin-right: 8px;
+`
+
 export interface TextButtonProps {
   color?: 'normal' | 'primary' | 'accent'
   label: string | React.ReactNode
+  /** An optional icon to place at the starting edge of the button. */
+  iconStart?: React.ReactNode
   className?: string
   disabled?: boolean
   onBlur?: React.FocusEventHandler
@@ -413,6 +424,7 @@ export const TextButton = React.forwardRef(
       label,
       className,
       disabled,
+      iconStart,
       onBlur,
       onFocus,
       onClick,
@@ -444,7 +456,10 @@ export const TextButton = React.forwardRef(
         type={type ?? 'button'}
         name={name}
         {...buttonProps}>
-        <Label>{label}</Label>
+        <Label>
+          {iconStart ? <IconContainer>{iconStart}</IconContainer> : null}
+          {label}
+        </Label>
         <Ripple ref={rippleRef} disabled={disabled} />
       </TextButtonRoot>
     )
