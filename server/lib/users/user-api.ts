@@ -10,7 +10,7 @@ import { toMapInfoJson } from '../../../common/maps'
 import { ALL_MATCHMAKING_TYPES, MatchmakingType } from '../../../common/matchmaking'
 import { SbPermissions } from '../../../common/users/permissions'
 import { ClientSessionInfo } from '../../../common/users/session'
-import { GetUserProfilePayload, SbUser, SelfUser } from '../../../common/users/user-info'
+import { GetUserProfilePayload, SbUser, SbUserId, SelfUser } from '../../../common/users/user-info'
 import { UNIQUE_VIOLATION } from '../db/pg-error-codes'
 import transact from '../db/transaction'
 import { HttpErrorWithPayload } from '../errors/error-with-payload'
@@ -159,7 +159,7 @@ export class UserApi {
     const NUM_RECENT_GAMES = 5
     const matchHistoryPromise = (async () => {
       const games = await getRecentGamesForUser(user.id, NUM_RECENT_GAMES)
-      const uniqueUsers = new Set<number>()
+      const uniqueUsers = new Set<SbUserId>()
       const uniqueMaps = new Set<string>()
       for (const g of games) {
         uniqueMaps.add(g.mapId)
